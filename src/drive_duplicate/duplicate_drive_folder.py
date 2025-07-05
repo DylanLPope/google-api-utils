@@ -168,10 +168,11 @@ def duplicate_from_config():
 
     cfg = json.loads(CONFIG_PATH.read_text())
 
-    folder_names = cfg["FOLDERS_TO_COPY"]                    # list of folder names to duplicate
-    root_id = cfg["ROOT_FOLDER_ID"]                          # new: ID of the root to search in
-    source_folder_name = cfg["SOURCE_FOLDER_NAME"]           # new: folder inside root that holds sources
-    dst_parent = cfg.get("DESTINATION_PARENT_FOLDER_ID")     # parent for new batch folder
+    folder_names = cfg["FOLDERS_TO_COPY"]                    # List of folder names to duplicate
+    root_id = cfg["ROOT_FOLDER_ID"]                          # ID of the root to search in
+    source_folder_name = cfg["SOURCE_FOLDER_NAME"]           # Folder inside root that holds sources
+    dest_root_name = cfg["DESTINATION_FOLDER_NAME"]          # Name of parent folder under root
+
     new_batch_name = cfg.get("NEW_BATCH_FOLDER_NAME", "Copied Folders")
 
     service = get_drive_service()
@@ -185,16 +186,25 @@ def duplicate_from_config():
             )
         src_parent = source_lookup[source_folder_name]
 
+        # Locate / create destination folder
+        dest_lookup = find_folders_by_name(service, root_id, [dest_root_name])
+        if dest_root_name in dest_lookup:
+            dest_parent = dest_lookup[dest_root_name]
+            print(f'Using existing destination folder "{dest_root_name}" ({dest_parent})')
+        else:
+            dest_parent = create_folder(service, dest_root_name, root_id)
+            print(f'Created destination folder "{dest_root_name}" ({dest_parent})')
+
         # Re‑use or create batch folder
-        parent_for_lookup = dst_parent or "root"
+        parent_for_lookup = dest_parent or "root"
         existing = find_folders_by_name(service, parent_for_lookup, [new_batch_name])
 
         if new_batch_name in existing:
             batch_folder_id = existing[new_batch_name]
             print(f"Using existing batch folder “{new_batch_name}” ({batch_folder_id})")
         else:
-            batch_folder_id = create_folder(service, new_batch_name, dst_parent)
-            print(f"Created batch folder “{new_batch_name}” ({batch_folder_id})")
+            batch_folder_id = create_folder(service, new_batch_name, dest_parent)
+            print(f'Created batch folder "{new_batch_name}" ({batch_folder_id})')
 
         found_folders = find_folders_by_name(service, src_parent, folder_names)
 
