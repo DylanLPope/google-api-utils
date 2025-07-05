@@ -95,20 +95,23 @@ def create_folder(service: Resource, name: str, parent_id: str | None) -> str:
     return service.files().create(body=meta, fields="id").execute()["id"]
 
 
-def list_children(service: Resource, folder_id: str, mime: str | None = None):
-    q = f"'{folder_id}' in parents and trashed = false"
-    if mime:
-        q += f" and mimeType = '{mime}'"
-    page_token = None
+def list_children(service: Resource, folder_id: str, mime_type_filter: str | None = None ):
+    """Yield metadata dictionaries for each item directly under *folder_id*."""
+
+    query = f"'{folder_id}' in parents and trashed = false"
+    if mime_type_filter:
+        query += f" and mimeType = '{mime_type_filter}'"
+    page_token: str | None = None
+
     while True:
-        resp = (
+        response = (
             service.files()
-            .list(q=q, fields="nextPageToken, files(id, name, mimeType)", pageToken=page_token)
+            .list(q=query, fields="nextPageToken, files(id, name, mimeType)", pageToken=page_token)
             .execute()
         )
-        for item in resp.get("files", []):
+        for item in response.get("files", []):
             yield item
-        page_token = resp.get("nextPageToken")
+        page_token = response.get("nextPageToken")
         if not page_token:
             break
 
@@ -176,7 +179,7 @@ def find_folders_by_name(service: Resource, parent_id: str, names: Sequence[str]
     """Return a mapping of folder name → ID for matching folders under parent_id."""
     wanted = set(names)
     found = {}
-    for item in list_children(service, parent_id, mime="application/vnd.google-apps.folder"):
+    for item in list_children(service, parent_id, mime_type_filter="application/vnd.google-apps.folder"):
         if item["name"] in wanted:
             found[item["name"]] = item["id"]
     return found
