@@ -122,22 +122,37 @@ def copy_file(service: Resource, file_id: str, name: str, parent_id: str):
     service.files().copy(fileId=file_id, body=body).execute()
 
 
-def copy_folder_recursive(
-    service: Resource,
-    src_id: str,
-    dst_parent_id: str | None,
-    new_name: str
-) -> str:
+def copy_folder_recursive( service: Resource, src_id: str, dst_parent_id: str | None, new_name: str,) -> str:
+    """
+    Copy a Drive folder tree. If a folder with `new_name` already exists under
+    dst_parent_id, merge into it by adding only the *missing* children.
+    """
 
-    dst_id = create_folder(service, new_name, dst_parent_id)
+    # Reuse‑or‑create the destination folder
+    existing_match = None
+    for item in list_children(
+        service,
+        dst_parent_id,
+        mime_type_filter="application/vnd.google-apps.folder",
+    ):
+        if item["name"] == new_name:
+            existing_match = item["id"]
+            break
 
-    # tqdm gives a neat progress bar; leave=False keeps parent bars tidy
+    dst_id = existing_match or create_folder(service, new_name, dst_parent_id)
+
+    # Build a quick lookup of names already present in dst_id  (files + folders)
+    existing_names = {
+        child["name"] for child in list_children(service, dst_id)
+    }
+
+    # Copy / recurse only for items that are missing
     for child in tqdm(list_children(service, src_id), desc=new_name, leave=False):
+        if child["name"] in existing_names:
+            continue  # already present → skip
         if child["mimeType"] == "application/vnd.google-apps.folder":
-            # Recurse for sub‑folders
             copy_folder_recursive(service, child["id"], dst_id, child["name"])
         else:
-            # Simple file copy for non‑folders
             copy_file(service, child["id"], child["name"], dst_id)
     return dst_id
 
