@@ -1,10 +1,10 @@
 {
     "SOURCE_PARENT_FOLDER_ID": "12tuJifTiJsqUoNCMZdIQhqVL-_Haebhy",
     "FOLDERS_TO_COPY": [
-        "Folder 1",
-        "Folder 2",
-        "Folder 4"
+        "Class Name 1",
+        "Class Name 2",
+        "Class Name 3"
     ],
     "DESTINATION_PARENT_FOLDER_ID": "156A1tUWdFCdTz8x0k9KqvkkJd4M0KH2O",
-    "NEW_BATCH_FOLDER_NAME": "Duplicated Folder"
+    "NEW_BATCH_FOLDER_NAME": "Target Teacher"
 }

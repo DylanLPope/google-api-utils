@@ -155,12 +155,22 @@ def duplicate_from_config():
     folder_names = cfg["FOLDERS_TO_COPY"]  # list of folder names to duplicate
     src_parent = cfg["SOURCE_PARENT_FOLDER_ID"]  # parent folder to search in
     dst_parent = cfg.get("DESTINATION_PARENT_FOLDER_ID")  # parent for new batch folder
-    new_batch_name = cfg.get("NEW_BATCH_FOLDER_NAME", "Copied Folders")
+    new_batch_name = cfg.get("NEW_BATCH_FOLDER_NAME", "Copied Folders") # name for new batch folder
 
     service = get_drive_service()
 
     try:
-        batch_folder_id = create_folder(service, new_batch_name, dst_parent)
+        # Check if the batch folder already exists
+        parent_for_lookup = dst_parent or "root"
+        existing = find_folders_by_name(service, parent_for_lookup, [new_batch_name])
+
+        if new_batch_name in existing:
+            batch_folder_id = existing[new_batch_name]
+            print(f"Using existing batch folder “{new_batch_name}” ({batch_folder_id})")
+        else:
+            batch_folder_id = create_folder(service, new_batch_name, dst_parent)
+            print(f"Created batch folder “{new_batch_name}” ({batch_folder_id})")
+
         found_folders = find_folders_by_name(service, src_parent, folder_names)
 
         missing = [name for name in folder_names if name not in found_folders]
