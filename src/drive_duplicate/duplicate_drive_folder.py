@@ -8,6 +8,7 @@ Standalone Google  Drive folder duplicator.
 
 from __future__ import annotations 
 
+import sys
 import json
 from pathlib import Path
 from typing import Sequence, List
@@ -167,15 +168,24 @@ def duplicate_from_config():
 
     cfg = json.loads(CONFIG_PATH.read_text())
 
-    folder_names = cfg["FOLDERS_TO_COPY"]  # list of folder names to duplicate
-    src_parent = cfg["SOURCE_PARENT_FOLDER_ID"]  # parent folder to search in
-    dst_parent = cfg.get("DESTINATION_PARENT_FOLDER_ID")  # parent for new batch folder
-    new_batch_name = cfg.get("NEW_BATCH_FOLDER_NAME", "Copied Folders") # name for new batch folder
+    folder_names = cfg["FOLDERS_TO_COPY"]                    # list of folder names to duplicate
+    root_id = cfg["ROOT_FOLDER_ID"]                          # new: ID of the root to search in
+    source_folder_name = cfg["SOURCE_FOLDER_NAME"]           # new: folder inside root that holds sources
+    dst_parent = cfg.get("DESTINATION_PARENT_FOLDER_ID")     # parent for new batch folder
+    new_batch_name = cfg.get("NEW_BATCH_FOLDER_NAME", "Copied Folders")
 
     service = get_drive_service()
 
     try:
-        # Check if the batch folder already exists
+        # Locate the source parent folder inside the root
+        source_lookup = find_folders_by_name(service, root_id, [source_folder_name])
+        if source_folder_name not in source_lookup:
+            sys.exit(
+                f'Source folder "{source_folder_name}" not found under root ID {root_id}'
+            )
+        src_parent = source_lookup[source_folder_name]
+
+        # Re‑use or create batch folder
         parent_for_lookup = dst_parent or "root"
         existing = find_folders_by_name(service, parent_for_lookup, [new_batch_name])
 
