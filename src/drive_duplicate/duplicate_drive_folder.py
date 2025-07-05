@@ -95,12 +95,10 @@ def create_folder(service: Resource, name: str, parent_id: str | None) -> str:
     return service.files().create(body=meta, fields="id").execute()["id"]
 
 
-def list_children(service: Resource, folder_id: str):
-    """
-    Generator yielding metadata dicts for every non-trashed item directly
-    inside `folder_id`. Handles Drive's pagination transparently.
-    """
+def list_children(service: Resource, folder_id: str, mime: str | None = None):
     q = f"'{folder_id}' in parents and trashed = false"
+    if mime:
+        q += f" and mimeType = '{mime}'"
     page_token = None
     while True:
         resp = (
@@ -149,23 +147,39 @@ def duplicate_from_config():
     if not CONFIG_PATH.exists():
         sys.exit(f"Config file not found: {CONFIG_PATH}")
 
-    cfg = json.loads(CONFIG_PATH.read_text())   # Parse JSON → dict.
-    src_id = cfg["SOURCE_FOLDER_ID"]                      # Required
-    dst_parent = cfg.get("DESTINATION_PARENT_FOLDER_ID")  # Optional
-    new_name = cfg.get("NEW_FOLDER_NAME")                 # Optional
+    cfg = json.loads(CONFIG_PATH.read_text())
+
+    folder_names = cfg["FOLDERS_TO_COPY"]  # list of folder names to duplicate
+    src_parent = cfg["SOURCE_PARENT_FOLDER_ID"]  # parent folder to search in
+    dst_parent = cfg.get("DESTINATION_PARENT_FOLDER_ID")  # parent for new batch folder
+    new_batch_name = cfg.get("NEW_BATCH_FOLDER_NAME", "Copied Folders")
 
     service = get_drive_service()
 
     try:
-        if not new_name:
-            src_meta = service.files().get(fileId=src_id, fields="name").execute()
-            new_name = f"{src_meta['name']} – Copy"
+        batch_folder_id = create_folder(service, new_batch_name, dst_parent)
+        found_folders = find_folders_by_name(service, src_parent, folder_names)
 
-        new_id = copy_folder_recursive(service, src_id, dst_parent, new_name)
-        print(f"Done! Duplicated folder ID: {new_id}")  # Success message
-    except HttpError as err:                   # Catch Drive API errors cleanly
+        missing = [name for name in folder_names if name not in found_folders]
+        if missing:
+            print(f"Warning: These folders were not found: {missing}")
+
+        for name, src_id in found_folders.items():
+            print(f"Copying folder: {name}")
+            copy_folder_recursive(service, src_id, batch_folder_id, name)
+
+        print(f"Done! Duplicated folders are in: {batch_folder_id}")
+    except HttpError as err:
         sys.exit(f"Drive API error: {err}")
 
+def find_folders_by_name(service: Resource, parent_id: str, names: Sequence[str]) -> dict[str, str]:
+    """Return a mapping of folder name → ID for matching folders under parent_id."""
+    wanted = set(names)
+    found = {}
+    for item in list_children(service, parent_id, mime="application/vnd.google-apps.folder"):
+        if item["name"] in wanted:
+            found[item["name"]] = item["id"]
+    return found
 
 if __name__ == "__main__":     # True only when script is run directly, not imported
     duplicate_from_config()    # Fire off the whole flow
