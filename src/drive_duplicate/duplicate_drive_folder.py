@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 import json
+import io
 from pathlib import Path
 from typing import Sequence, List
 
@@ -18,6 +19,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaInMemoryUpload
 
 from tqdm import tqdm
 
@@ -175,25 +177,20 @@ def copy_file(service: Resource, file_id: str, name: str, parent_id: str):
     service.files().copy(fileId=file_id, body=body).execute()
 
 
-def copy_folder_recursive( service: Resource, src_id: str, dst_parent_id: str | None, new_name: str,) -> str:
+def copy_folder_recursive(service: Resource, src_id: str, dst_parent_id: str | None, new_name: str) -> str:
     """
-    Copy a Drive folder tree. If a folder with `new_name` already exists under
-    dst_parent_id, merge into it by adding only the *missing* children.
+    Copy a Drive folder tree. Uses `_system/.meta.json` to merge into previously
+    copied folders even if they've been renamed.
     """
-
-    # Reuse‑or‑create the destination folder
-    existing_match = None
-    for item in list_children(
-        service,
-        dst_parent_id,
-        mime_type_filter="application/vnd.google-apps.folder",
-    ):
-        if item["name"] == new_name:
-            existing_match = item["id"]
-            break
-
-    dst_id = existing_match or create_folder(service, new_name, dst_parent_id)
-
+    # Reuse or create destination folder by meta
+    existing_match = find_folder_by_meta(service, dst_parent_id, src_id)
+    if existing_match:
+        dst_id = existing_match
+    else:
+        # Meta injection
+        dst_id = create_folder(service, new_name, dst_parent_id)
+        ensure_meta_file(service, dst_id, src_id)        
+    
     # Build a quick lookup of names already present in dst_id  (files + folders)
     existing_names = {
         child["name"] for child in list_children(service, dst_id)
@@ -208,6 +205,54 @@ def copy_folder_recursive( service: Resource, src_id: str, dst_parent_id: str | 
         else:
             copy_file(service, child["id"], child["name"], dst_id)
     return dst_id
+
+
+def ensure_meta_file(service: Resource, dst_folder_id: str, source_id: str) -> None:
+    """Ensure `_system/.meta.json` exists under `dst_folder_id` with correct source_id."""
+    # Locate or create the _system folder
+    sys_lookup = find_folders_by_name(service, dst_folder_id, ["_system"])
+    if "_system" in sys_lookup:
+        system_id = sys_lookup["_system"]
+    else:
+        system_id = create_folder(service, "_system", dst_folder_id)
+
+    # Check for an existing .meta.json
+    meta_id = None
+    for item in list_children(service, system_id):
+        if item["name"] == ".meta.json":
+            meta_id = item["id"]
+            break
+
+    meta_content = json.dumps({"source_id": source_id})
+    if meta_id:
+        # Update if the content has changed
+        service.files().update(
+            fileId=meta_id,
+            media_body=MediaInMemoryUpload(meta_content.encode(), mimetype="application/json"),
+        ).execute()
+    else:
+        # Create the meta file
+        service.files().create(
+            body={"name": ".meta.json", "parents": [system_id]},
+            media_body=MediaInMemoryUpload(meta_content.encode(), mimetype="application/json"),
+        ).execute()
+
+def find_folder_by_meta(service: Resource, parent_id: str, source_id: str) -> str | None:
+    """Return the ID of a child folder whose _system/.meta.json matches source_id."""
+    for child in list_children(service, parent_id, mime_type_filter="application/vnd.google-apps.folder"):
+        sys_lookup = find_folders_by_name(service, child["id"], ["_system"])
+        if "_system" not in sys_lookup:
+            continue
+        system_id = sys_lookup["_system"]
+        for item in list_children(service, system_id):
+            if item["name"] == ".meta.json":
+                data = service.files().get_media(fileId=item["id"]).execute()
+                try:
+                    if json.loads(data.decode()).get("source_id") == source_id:
+                        return child["id"]
+                except (ValueError, UnicodeDecodeError):
+                    continue
+    return None
 
 # ──────────────────────────────────────────────────────────────
 # Main entrypoint
