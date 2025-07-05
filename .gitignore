@@ -1,0 +1,8 @@
+# Python artefacts
+__pycache__/
+*.pyc
+venv/
+
+# Secrets
+credentials.json
+src/*/token_*.json
