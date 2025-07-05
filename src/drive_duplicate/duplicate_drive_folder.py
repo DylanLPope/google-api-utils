@@ -95,6 +95,58 @@ def create_folder(service: Resource, name: str, parent_id: str | None) -> str:
         meta["parents"] = [parent_id]
     return service.files().create(body=meta, fields="id").execute()["id"]
 
+def locate_source_parent(service: Resource, root_id: str, folder_name: str) -> str:
+    """Return the ID of `folder_name` under `root_id`, or exit on error."""
+    lookup = find_folders_by_name(service, root_id, [folder_name])
+    if folder_name not in lookup:
+        sys.exit(f'Source folder "{folder_name}" not found under root ID {root_id}')
+    return lookup[folder_name]
+
+
+def get_or_create_destination_folder(service: Resource, root_id: str, dest_name: str) -> str:
+    """Find or create the destination folder under `root_id` and return its ID."""
+    lookup = find_folders_by_name(service, root_id, [dest_name])
+    if dest_name in lookup:
+        dest_id = lookup[dest_name]
+        print(f'Using existing destination folder "{dest_name}" ({dest_id})')
+    else:
+        dest_id = create_folder(service, dest_name, root_id)
+        print(f'Created destination folder "{dest_name}" ({dest_id})')
+    return dest_id
+
+
+def get_or_create_batch_folder(service: Resource, parent_id: str, batch_name: str) -> str:
+    """Find or create the batch folder under `parent_id` and return its ID."""
+    lookup = find_folders_by_name(service, parent_id, [batch_name])
+    if batch_name in lookup:
+        batch_id = lookup[batch_name]
+        print(f'Using existing batch folder "{batch_name}" ({batch_id})')
+    else:
+        batch_id = create_folder(service, batch_name, parent_id)
+        print(f'Created batch folder "{batch_name}" ({batch_id})')
+    return batch_id
+
+def copy_selected_folders(service: Resource, src_parent_id: str, batch_folder_id: str, folder_names: Sequence[str]) -> None:
+    """Copy each folder in `folder_names` (if found) into `batch_folder_id`."""
+    found = find_folders_by_name(service, src_parent_id, folder_names)
+    missing = [n for n in folder_names if n not in found]
+    if missing:
+        print(f"Warning: These folders were not found: {missing}")
+
+    for name, src_id in found.items():
+        print(f"Copying folder: {name}")
+        copy_folder_recursive(service, src_id, batch_folder_id, name)
+
+
+def find_folders_by_name(service: Resource, parent_id: str, names: Sequence[str]) -> dict[str, str]:
+    """Return a mapping of folder name → ID for matching folders under parent_id."""
+    wanted = set(names)
+    found = {}
+    for item in list_children(service, parent_id, mime_type_filter="application/vnd.google-apps.folder"):
+        if item["name"] in wanted:
+            found[item["name"]] = item["id"]
+    return found
+
 
 def list_children(service: Resource, folder_id: str, mime_type_filter: str | None = None ):
     """Yield metadata dictionaries for each item directly under *folder_id*."""
@@ -178,56 +230,21 @@ def duplicate_from_config():
     service = get_drive_service()
 
     try:
-        # Locate the source parent folder inside the root
-        source_lookup = find_folders_by_name(service, root_id, [source_folder_name])
-        if source_folder_name not in source_lookup:
-            sys.exit(
-                f'Source folder "{source_folder_name}" not found under root ID {root_id}'
-            )
-        src_parent = source_lookup[source_folder_name]
+        # Resolve source
+        src_parent = locate_source_parent(service, root_id, source_folder_name)
 
-        # Locate / create destination folder
-        dest_lookup = find_folders_by_name(service, root_id, [dest_root_name])
-        if dest_root_name in dest_lookup:
-            dest_parent = dest_lookup[dest_root_name]
-            print(f'Using existing destination folder "{dest_root_name}" ({dest_parent})')
-        else:
-            dest_parent = create_folder(service, dest_root_name, root_id)
-            print(f'Created destination folder "{dest_root_name}" ({dest_parent})')
+        # Resolve destination root, 
+        dest_parent = get_or_create_destination_folder(service, root_id, dest_root_name)
 
-        # Re‑use or create batch folder
-        parent_for_lookup = dest_parent or "root"
-        existing = find_folders_by_name(service, parent_for_lookup, [new_batch_name])
+        # Resolve batch folder
+        batch_folder_id = get_or_create_batch_folder(service, dest_parent, new_batch_name)
 
-        if new_batch_name in existing:
-            batch_folder_id = existing[new_batch_name]
-            print(f"Using existing batch folder “{new_batch_name}” ({batch_folder_id})")
-        else:
-            batch_folder_id = create_folder(service, new_batch_name, dest_parent)
-            print(f'Created batch folder "{new_batch_name}" ({batch_folder_id})')
-
-        found_folders = find_folders_by_name(service, src_parent, folder_names)
-
-        missing = [name for name in folder_names if name not in found_folders]
-        if missing:
-            print(f"Warning: These folders were not found: {missing}")
-
-        for name, src_id in found_folders.items():
-            print(f"Copying folder: {name}")
-            copy_folder_recursive(service, src_id, batch_folder_id, name)
+        # Copy selected folders
+        copy_selected_folders(service, src_parent, batch_folder_id, folder_names)
 
         print(f"Done! Duplicated folders are in: {batch_folder_id}")
     except HttpError as err:
         sys.exit(f"Drive API error: {err}")
-
-def find_folders_by_name(service: Resource, parent_id: str, names: Sequence[str]) -> dict[str, str]:
-    """Return a mapping of folder name → ID for matching folders under parent_id."""
-    wanted = set(names)
-    found = {}
-    for item in list_children(service, parent_id, mime_type_filter="application/vnd.google-apps.folder"):
-        if item["name"] in wanted:
-            found[item["name"]] = item["id"]
-    return found
 
 if __name__ == "__main__":     # True only when script is run directly, not imported
     duplicate_from_config()    # Fire off the whole flow
