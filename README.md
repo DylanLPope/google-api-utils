@@ -20,14 +20,15 @@ All tools in this repo use **a single `credentials.json`** (OAuth 2.0 Desktop ap
 
 > Searches a target folder and creates duplicates of identified sub-folders.
 > Designed to create duplicate versions of folders without altering the main read-only folder
-> E.g Use Case:
-    Creating instructor specific curriculum folders from main curriculum
-    Allows intructors to have their own versions of slides, assignments, etc. to be edited without affecting other intructors content
-    Intructors teaching 2 time-slots of the same class can have seperate slides decks, allowing examples and interactive components in the slides to be class specific
 
 - Uses the Drive v3 API.
 - Preserves folder structure and names.
 - Automatically handles authentication and token storage.
 - Full details and usage instructions: [`src/drive_duplicate/README.md`](src/drive_duplicate/README.md)
+
+E.g Use Case:
+- Creating instructor specific curriculum folders from main curriculum
+- Allows intructors to have their own versions of slides, assignments, etc. to be edited without affecting other intructors content
+- Intructors teaching 2 time-slots of the same class can have seperate slides decks, allowing examples and interactive components in the slides to be class specific
 
 ---
