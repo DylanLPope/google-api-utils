@@ -271,12 +271,10 @@ def duplicate_from_config():
 
     cfg = json.loads(CONFIG_PATH.read_text())
 
-    folder_names = cfg["FOLDERS_TO_COPY"]                    # List of folder names to duplicate
     root_id = cfg["ROOT_FOLDER_ID"]                          # ID of the root to search in
     source_folder_name = cfg["SOURCE_FOLDER_NAME"]           # Folder inside root that holds sources
     dest_root_name = cfg["DESTINATION_FOLDER_NAME"]          # Name of parent folder under root
-
-    new_batch_name = cfg.get("NEW_BATCH_FOLDER_NAME", "Copied Folders")
+    batches = cfg["BATCHES"]                                 # Array of batches to be created
 
     service = get_drive_service()
 
@@ -284,16 +282,19 @@ def duplicate_from_config():
         # Resolve source
         src_parent = locate_source_parent(service, root_id, source_folder_name)
 
-        # Resolve destination root, 
+        # Resolve destination root
         dest_parent = get_or_create_destination_folder(service, root_id, dest_root_name)
 
-        # Resolve batch folder
-        batch_folder_id = get_or_create_batch_folder(service, dest_parent, new_batch_name)
+        for batch in batches:
+            batch_name   = batch["NEW_BATCH_FOLDER_NAME"]
+            folder_names = batch["FOLDERS_TO_COPY"]
 
-        # Copy selected folders
-        copy_selected_folders(service, src_parent, batch_folder_id, folder_names)
+            batch_folder_id = get_or_create_batch_folder(service, dest_parent, batch_name)
+            print(f"\n=== Processing batch: {batch_name} ===")
+            copy_selected_folders(service, src_parent, batch_folder_id, folder_names)
 
-        print(f"Done! Duplicated folders are in: {batch_folder_id}")
+        print("\nAll batches completed successfully.")
+
     except HttpError as err:
         sys.exit(f"Drive API error: {err}")
 

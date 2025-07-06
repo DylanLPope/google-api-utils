@@ -1,11 +1,21 @@
 {
     "ROOT_FOLDER_ID": "1VoqTSdLhDhdUg6r_ucWxBp69IvRdezbT",
     "SOURCE_FOLDER_NAME": "Core Curriculum (read-only)",
-    "FOLDERS_TO_COPY": [
-        "Class Name 1",
-        "Class Name 2",
-        "Class Name 3"
-    ],
     "DESTINATION_FOLDER_NAME": "Session-Year",
-    "NEW_BATCH_FOLDER_NAME": "Target Teacher"
+    "BATCHES": [
+        {
+            "NEW_BATCH_FOLDER_NAME": "Instructor #1",
+            "FOLDERS_TO_COPY": [
+                "Class Name 1",
+                "Class Name 2"
+            ]
+        },
+        {
+            "NEW_BATCH_FOLDER_NAME": "Instructor #2",
+            "FOLDERS_TO_COPY": [
+                "Class Name 3",
+                "Class Name 4"
+            ]
+        }
+    ]
 }
