@@ -129,15 +129,27 @@ def get_or_create_batch_folder(service: Resource, parent_id: str, batch_name: st
     return batch_id
 
 def copy_selected_folders(service: Resource, src_parent_id: str, batch_folder_id: str, folder_names: Sequence[str]) -> None:
-    """Copy each folder in `folder_names` (if found) into `batch_folder_id`."""
-    found = find_folders_by_name(service, src_parent_id, folder_names)
-    missing = [n for n in folder_names if n not in found]
-    if missing:
-        print(f"Warning: These folders were not found: {missing}")
+    """
+    Copy each entry in `folder_names` into `batch_folder_id`, preserving order.
+    Duplicate names are allowed; a numeric suffix produces a unique identifier.
+    """
+    seen: dict[str, int] = {}
 
-    for name, src_id in found.items():
-        print(f"Copying folder: {name}")
-        copy_folder_recursive(service, src_id, batch_folder_id, name)
+    for src_name in folder_names:
+        # Lookup this source folder each time
+        src_lookup = find_folders_by_name(service, src_parent_id, [src_name])
+        if src_name not in src_lookup:
+            print(f'Warning: source folder "{src_name}" not found — skipped.')
+            continue
+        src_id = src_lookup[src_name]
+
+        # Determine destination name / identifier
+        seen[src_name] = seen.get(src_name, 0) + 1
+        suffix = "" if seen[src_name] == 1 else f" ({seen[src_name]})"
+        dest_name = f"{src_name}{suffix}"
+
+        print(f"Copying folder: {dest_name}")
+        copy_folder_recursive(service, src_id, batch_folder_id, dest_name)
 
 
 def find_folders_by_name(service: Resource, parent_id: str, names: Sequence[str]) -> dict[str, str]:
@@ -183,13 +195,13 @@ def copy_folder_recursive(service: Resource, src_id: str, dst_parent_id: str | N
     copied folders even if they've been renamed.
     """
     # Reuse or create destination folder by meta
-    existing_match = find_folder_by_meta(service, dst_parent_id, src_id)
+    existing_match = find_folder_by_meta(service, dst_parent_id, src_id, new_name)
     if existing_match:
         dst_id = existing_match
     else:
         # Meta injection
         dst_id = create_folder(service, new_name, dst_parent_id)
-        ensure_meta_file(service, dst_id, src_id)        
+        ensure_meta_file(service, dst_id, src_id, new_name)
     
     # Build a quick lookup of names already present in dst_id  (files + folders)
     existing_names = {
@@ -207,51 +219,45 @@ def copy_folder_recursive(service: Resource, src_id: str, dst_parent_id: str | N
     return dst_id
 
 
-def ensure_meta_file(service: Resource, dst_folder_id: str, source_id: str) -> None:
-    """Ensure `_system/.meta.json` exists under `dst_folder_id` with correct source_id."""
+def ensure_meta_file(service: Resource, dst_folder_id: str, source_id: str, identifier: str) -> None:
+    """Ensure `_system/.meta.json` records source_id **and** identifier."""
     # Locate or create the _system folder
     sys_lookup = find_folders_by_name(service, dst_folder_id, ["_system"])
-    if "_system" in sys_lookup:
-        system_id = sys_lookup["_system"]
-    else:
-        system_id = create_folder(service, "_system", dst_folder_id)
+    system_id = sys_lookup["_system"] if "_system" in sys_lookup else create_folder(service, "_system", dst_folder_id)
 
-    # Check for an existing .meta.json
+    meta_content = json.dumps({"source_id": source_id, "identifier": identifier})
+    media = MediaInMemoryUpload(meta_content.encode(), mimetype="application/json")
+
+    # Look for existing .meta.json
     meta_id = None
     for item in list_children(service, system_id):
         if item["name"] == ".meta.json":
             meta_id = item["id"]
             break
 
-    meta_content = json.dumps({"source_id": source_id})
     if meta_id:
-        # Update if the content has changed
-        service.files().update(
-            fileId=meta_id,
-            media_body=MediaInMemoryUpload(meta_content.encode(), mimetype="application/json"),
-        ).execute()
+        service.files().update(fileId=meta_id, media_body=media).execute()
     else:
-        # Create the meta file
-        service.files().create(
-            body={"name": ".meta.json", "parents": [system_id]},
-            media_body=MediaInMemoryUpload(meta_content.encode(), mimetype="application/json"),
-        ).execute()
+        service.files().create(body={"name": ".meta.json", "parents": [system_id]}, media_body=media).execute()
 
-def find_folder_by_meta(service: Resource, parent_id: str, source_id: str) -> str | None:
-    """Return the ID of a child folder whose _system/.meta.json matches source_id."""
+
+def find_folder_by_meta(service: Resource, parent_id: str, source_id: str, identifier: str) -> str | None:
+    """Return child folder ID whose `.meta.json` matches both source_id & identifier."""
     for child in list_children(service, parent_id, mime_type_filter="application/vnd.google-apps.folder"):
         sys_lookup = find_folders_by_name(service, child["id"], ["_system"])
         if "_system" not in sys_lookup:
             continue
         system_id = sys_lookup["_system"]
         for item in list_children(service, system_id):
-            if item["name"] == ".meta.json":
-                data = service.files().get_media(fileId=item["id"]).execute()
-                try:
-                    if json.loads(data.decode()).get("source_id") == source_id:
-                        return child["id"]
-                except (ValueError, UnicodeDecodeError):
-                    continue
+            if item["name"] != ".meta.json":
+                continue
+            data = service.files().get_media(fileId=item["id"]).execute()
+            try:
+                meta = json.loads(data.decode())
+                if meta.get("source_id") == source_id and meta.get("identifier") == identifier:
+                    return child["id"]
+            except (ValueError, UnicodeDecodeError):
+                continue
     return None
 
 # ──────────────────────────────────────────────────────────────
