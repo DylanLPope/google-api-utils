@@ -37,12 +37,17 @@ Install manually:
 ### 5. Configure folder IDs
 Edit `src/drive_duplicate/drive_config.json` with:
 
-    {
-      "SOURCE_FOLDER_ID": "your-source-folder-id",
-      "DESTINATION_PARENT_FOLDER_ID": "your-destination-folder-id",
-      "NEW_FOLDER_NAME": "Duplicated Folder Name"
-    }
-
+{
+    "ROOT_FOLDER_ID": "rootFolderID",
+    "SOURCE_FOLDER_NAME": "Name of Source Folder to copy content from",
+    "FOLDERS_TO_COPY": [
+        "Folder name for target class",
+        "Folder name for target class",
+        "Folder name for target class"
+    ],
+    "DESTINATION_FOLDER_NAME": "Session-Year",
+    "NEW_BATCH_FOLDER_NAME": "Target Teacher"
+}
 ---
 
 ### 6. Run the script
@@ -54,6 +59,16 @@ From the repo root, execute:
 - A browser window opens for Google authentication on first run.
 - `token_drive.json` is created next to the script to store your OAuth token.
 - The folder duplicates recursively, and the new folder ID is printed.
+---
+
+### System Metadata and Folder Behavior
+The duplicator automatically adds a _system folder to each copied folder containing a hidden .meta.json file. This file:
+- Tracks the origin of the copied folder.
+- Enables merging new content in future runs.
+- Ensures missing files and subfolders are added without affecting existing edits.
+- Allows folders to be renamed freely without breaking future updates.
+
+Important: Do not delete or modify the _system folder or .meta.json file. Doing so may prevent updates from functioning correctly.
 ---
 
 ### Troubleshooting
